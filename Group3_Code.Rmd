@@ -1,0 +1,729 @@
+---
+title: "Strategic Insights into Costco's Revenue Growth: 
+Membership Fees, Market Expansion, and Forecasting"
+
+Group member: "Ma Xinai 3036348018; Chen Siqi 3036347284; Feng Jiayi 3036347234; Huang Haowen 3036345298；Chau Man Lung 3036431528; Wu Zhuoya 3036345834"
+output:
+  html_document:
+    df_print: paged
+    code_folding: show
+    highlight: haddock
+    theme: lumen
+    toc: true
+    toc_depth: 4
+    toc_float: true
+editor_options:
+  markdown:
+    wrap: 72
+---
+# 1. Project Background and Objectives
+
+Costco, the largest membership-based warehouse retailer in the United
+States, derives a significant portion of its revenue from membership
+fees. The project aims to analyze Costco's quarterly revenue data from
+Q1 2009 to Q4 2024 and explore the key drivers of revenue growth.
+
+We employed endogenous factor analysis to reveal the relationships among
+membership fees, gross margin, cardholders, and warehouses. We further
+utilized time-series analysis to forecast the revenue data for 2025.
+Based on these findings, we proposed recommendations for inventory
+planning, marketing, and management.
+
+# 2. Data Loading and Exploration
+
+## 2.1 Necessary Packages Loading
+
+```{r setup, include=FALSE}
+# Set CRAN mirror
+options(repos = c(CRAN = "https://cloud.r-project.org"))
+
+# Set knitr options
+knitr::opts_chunk$set(echo = TRUE)
+
+# Install necessary R packages
+#install.packages(c("forecast", "ggplot2", "lubridate", "readr", "dplyr", "tsoutliers", "tseries", "gridExtra"))
+
+# Load required libraries
+library(readr)
+library(forecast)
+library(tsoutliers)
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+library(tseries)
+library(gridExtra)
+library(car)
+```
+
+## 2.2 Data Loading
+
+```{r}
+# Load the data
+data <- read_csv("COSTCO.csv", show_col_types = FALSE)
+
+# Print the first few rows of the data
+head(data)
+```
+
+-   This dataset contains quarterly information from 2009 to 2024,
+    including revenue, membership fees, gross margin, number of
+    cardholders, and number of warehouses.
+
+## 2.3 Data Exploration
+
+```{r}
+# Convert quarter to date and create a time series
+data$Date <- as.Date(paste0("20", substr(data$Quarter, 4, 5), "-", 
+                            c("01", "04", "07", "10")[as.numeric(substr(data$Quarter, 2, 2))], "-01"))
+data_ts <- ts(data$Revenue, start = c(2009, 1), frequency = 4)
+
+# Generate summary statistics
+summary_stats <- summary(data$Revenue)
+cat("Summary Statistics:\n")
+print(summary_stats)
+
+# Visualize the time series
+autoplot(data_ts) +
+  ggtitle("Quarterly Revenue Trend (2009-2024)") +
+  xlab("Year") +
+  ylab("Revenue (in Millions)")
+
+# Check for missing values in the data
+cat("The number of missing value:\n")
+print(sum(is.na(data)))
+
+# Print the cleaned data
+head(data)
+```
+
+# 3. Endogenous Revenue Drivers Analysis
+
+## 3.1 Exploration of Endogenous Variables
+
+### 3.1.1 Correlation Between Revenue and Membership Fees
+
+```{r}
+# Correlation between Revenue and Membership Fees
+cor_membership <- cor(data$Revenue, data$Membership_Fees)
+print(paste0("Correlation between Revenue and Membership Fees: ", round(cor_membership, 2)))
+```
+
+-   The correlation coefficient between membership fee and revenue is
+    0.99, indicating a strong positive correlation between the two. It
+    can be seen that membership fee is one of the main drivers of
+    Costco's revenue.
+
+```{r}
+# Scatterplot of Membership Fees vs. Revenue
+ggplot(data, aes(x = Membership_Fees, y = Revenue)) +
+  geom_point(color = "blue") +
+  geom_smooth(method = "lm", se = FALSE, color = "red") +
+  ggtitle("Membership Fees vs Revenue") +
+  xlab("Membership Fees") +
+  ylab("Revenue")
+```
+
+-   The positive correlation can be seen from the plot.
+
+### 3.1.2 Region Contribution
+
+```{r}
+region_contribution <- data %>%
+  select(Region_US, Region_Canada, Region_Others) %>%
+  summarise(across(everything(), mean))
+
+print(region_contribution)
+```
+
+```{r}
+region_data <- data %>%
+  dplyr::select(Date, Region_US, Region_Canada, Region_Others) %>%
+  pivot_longer(cols = c(Region_US, Region_Canada, Region_Others), names_to = "Region", values_to = "Revenue")
+
+ggplot(region_data, aes(x = Date, y = Revenue, color = Region)) +
+  geom_line() +
+  ggtitle("Regional Revenue Contribution Over Time") +
+  xlab("Year") +
+  ylab("Revenue")
+```
+
+-   Contributions from the United States, Canada and other regions were
+    26639.25、5255.344 and 4661.625, respectively. It can be seen that
+    the The U.S is the highest contributor.
+
+### 3.1.3 Relationship Between Gross Margin and Revenue
+
+```{r}
+# Correlation between gross margin and revenue
+cor_margin <- cor(data$Revenue, data$Gross_Margin)
+print(paste0("Correlation between Revenue and Gross Margin: ", round(cor_margin, 2)))
+```
+
+-   The correlation coefficient between gross margin and revenue is
+    -0.24, indicating a weak negative correlation. This may be
+    consistent with Costco's business model of low gross margins and
+    high revenues:attracting more customers by lowering gross margins,
+    which in turn drives total revenue growth.
+
+```{r}
+# Time series of gross margin vs. revenue
+ggplot(data, aes(x = Date)) +
+  geom_line(aes(y = Revenue, color = "Revenue")) +
+  geom_line(aes(y = Gross_Margin * max(Revenue) / max(Gross_Margin), color = "Gross Margin")) +
+  scale_y_continuous(sec.axis = sec_axis(~ . * max(data$Gross_Margin) / max(data$Revenue), name = "Gross Margin")) +
+  labs(title = "Revenue and Gross Margin Over Time", x = "Year", y = "Revenue", color = "")
+```
+
+### 3.1.4 Relationship Between Number of Cardholders and Revenue
+
+```{r}
+# Correlation between cardholders and revenue
+cor_margin <- cor(data$Revenue, data$Cardholders)
+
+print(paste0("Correlation between Revenue and Cardholders: ", round(cor_margin, 2)))
+```
+
+-   The correlation coefficient between the number of cardholders and
+    revenue is 0.92, indicating that an increase in the number of
+    cardholders has a significant positive impact on total revenue. This
+    further validates the importance of Costco's membership model on its
+    revenue.
+
+```{r}
+# Scatterplot of number of cardholders vs. revenue
+ggplot(data, aes(x = Cardholders, y = Revenue)) +
+  geom_point(color = "green") +
+  geom_smooth(method = "lm", se = FALSE, color = "red") +
+  ggtitle("Cardholders vs Revenue") +
+  xlab("Cardholders") +
+  ylab("Revenue")
+```
+
+### 3.1.5 Relationship Between the Number of Warehouses and Revenue
+
+```{r}
+# Correlation between warehouses and revenue
+cor_margin <- cor(data$Revenue, data$Warehouses)
+print(paste0("Correlation between Revenue and Warehouses: ", round(cor_margin, 2)))
+```
+
+-   Here we use the number of warehouses to represent the number of
+    stores.The correlation coefficient between the number of warehouses
+    and revenue is 0.9, indicating that the growth in the number of
+    warehouses has a significant positive impact on revenue. Costco's
+    expansion strategy (increasing the number of stores) has played a
+    major role in its revenue growth.
+
+```{r}
+# Time series of gross warehouses vs. revenue
+ggplot(data, aes(x = Date)) +
+  geom_line(aes(y = Revenue, color = "Revenue")) +
+  geom_line(aes(y = Warehouses * max(Revenue) / max(Warehouses), color = "Warehouses")) +
+  scale_y_continuous(sec.axis = sec_axis(~ . * max(data$Warehouses) / max(data$Revenue), name = "Warehouses")) +
+  labs(title = "Revenue and Warehouses Over Time", x = "Year", y = "Revenue", color = "")
+```
+
+## 3.2 Multiple Linear Regression Analysis
+
+### 3.2.1 Initial Model Construction and Variable Selection
+
+```{r}
+lm_model <- lm(Revenue ~ Membership_Fees + Gross_Margin + Cardholders + Warehouses, data = data)
+summary(lm_model)
+coef(lm_model)
+```
+
+**Model Summary:**
+
+-   Adjusted R²: 0.9938, indicating a high explanatory power of the
+    model.
+
+-   Significant variables:
+
+    -   Membership_Fees (p \< 0.001): Strong positive impact(estimated
+        coefficient = 46.76).
+
+    -   Cardholders (p \< 0.001): Significant positive impact(estimated
+        coefficient = 0.392).
+
+    -   Gross_Margin (p \< 0.001): Significant negative impact(estimated
+        coefficient = -2824.89).
+
+    -   Warehouses (p \< 0.001): Significant negative impact(estimated
+        coefficient = -68.46).
+
+**Results Analysis:**
+
+-   Gross_Margin's negative coefficient: Consistent with Costco's
+    business model, indicating that an increase in gross margin may
+    reduce revenue (e.g., higher product prices leading to lower sales
+    volumes).
+
+-   Cardholders' positive coefficient: Validates the importance of the
+    membership model in driving revenue; an increase in cardholders
+    significantly boosts total revenue.
+
+-   Membership_Fees' large coefficient: Highlights the direct
+    contribution of membership fees to revenue.
+
+-   Warehouses' negative coefficient: Possibly due to multicollinearity
+    or complex relationships among variables, requiring further
+    investigation.
+
+### 3.2.2 Multicollinearity Treatment
+
+Using **VIF (Variance Inflation Factor)** to check for
+multicollinearity:
+
+```{r}
+vif_values <- vif(lm_model)
+print(vif_values)
+```
+
+**Results:**
+
+-   Membership_Fees: 6.45 (close to the threshold of 10 but acceptable).
+
+-   Gross_Margin: 1.54 (low, no significant multicollinearity).
+
+-   Cardholders: 75.87 (far exceeds 10, severe multicollinearity).
+
+-   Warehouses: 70.66 (far exceeds 10, severe multicollinearity).
+
+**Analysis:**
+
+-   High VIF values for Cardholders and Warehouses indicate severe
+    multicollinearity between these variables.
+
+-   Since Cardholders and Warehouses are highly correlated(likely
+    reflecting Costco's store expansion and membership growth
+    relationship), removing one of the variables can help alleviate
+    multicollinearity.
+
+**Optimization Steps:**
+
+Remove the **Cardholders** variable and refit the model:
+
+```{r}
+lm_model_updated <- lm(Revenue ~ Membership_Fees + Gross_Margin + Warehouses, data = data)
+summary(lm_model_updated)
+```
+
+```{r}
+vif_values <- vif(lm_model_updated)
+print(vif_values)
+```
+
+**Updated Model Results:**
+
+-   Adjusted R²: 0.9889, slightly lower than the original model but
+    still highly explanatory.
+
+-   Significant variables:
+
+    -   Membership_Fees (p \< 0.001): Positive impact (estimated
+        coefficient = 49.20).
+
+    -   Gross_Margin (p \< 0.001): Negative impact (estimated
+        coefficient = -4633.58).
+
+    -   Warehouses (p = 0.0032): Positive impact (estimated coefficient
+        = 14.85).
+
+**VIF Values:**
+
+-   Membership_Fees: 6.05 (still acceptable).
+
+-   Gross_Margin: 1.13 (no multicollinearity).
+
+-   Warehouses: 5.92 (no significant multicollinearity).
+
+**Results Analysis:**
+
+-   After removing Cardholders, the multicollinearity issue is
+    significantly alleviated, with all VIF values below 10.
+
+-   Gross_Margin's negative coefficient remains significant, consistent
+    with Costco's low-margin, high-volume business model.
+
+-   Warehouses' positive coefficient suggests that store expansion
+    positively impacts revenue.
+
+### 3.3.3 Testing for Nonlinear Relationships
+
+To explore potential nonlinear relationships, a quadratic term
+for**Gross_Margin** was added:
+
+```{r}
+data$Gross_Margin_squared <- data$Gross_Margin^2
+lm_model_nonlinear <- lm(Revenue ~ Membership_Fees + Gross_Margin + Gross_Margin_squared + Warehouses, data = data)
+summary(lm_model_nonlinear)
+```
+
+**Results:**
+
+-   The linear and quadratic terms for Gross_Margin were both
+    insignificant (p \> 0.05).
+
+-   Adjusted R² was nearly identical to the linear model (0.9887).
+
+**Analysis:**
+
+-   Adding a quadratic term for Gross_Margin did not significantly
+    improve the model's explanatory power.
+
+-   The relationship between Gross_Margin and revenue appears to be
+    approximately linear, not nonlinear.
+
+**Conclusion:**
+
+-   Testing for nonlinear relationships was unnecessary and can be
+    omitted.
+
+### 3.3.4 Detecting Outliers
+
+Using **Cook's Distance** to detect outliers:
+
+```{r}
+cooksd <- cooks.distance(lm_model_updated)
+outliers <- which(cooksd > 4 / nrow(data))
+print(outliers)
+```
+
+**Results:**
+
+-   5 outliers were detected (indices: 39, 43, 58, 63, 64).
+
+After removing these outliers, the model was refitted:{r}
+
+```{r}
+data_cleaned <- data[-outliers, ]
+lm_model_cleaned <- lm(Revenue ~ Membership_Fees + Gross_Margin + Warehouses, data = data_cleaned)
+summary(lm_model_cleaned)
+```
+
+**Cleaned Model Results:**
+
+-   Adjusted R²: 0.9907, slightly higher than the model with uncleaned
+    data.
+
+-   Significant variables:
+
+    -   Membership_Fees (p \< 0.001): Positive impact (estimated
+        coefficient = 49.24).
+
+    -   Gross_Margin (p \< 0.001): Negative impact (estimated
+        coefficient = -4693.12).
+
+    -   Warehouses (p = 0.0022): Positive impact (estimated coefficient
+        = 14.30).
+
+**Analysis:**
+
+-   Removing outliers slightly improved the model's fit.
+
+-   The significance and direction of variable effects remained
+    consistent, indicating that outliers had minimal impact on the
+    overall explanatory power.
+
+-   Cleaning outliers allows the model to better reflect the true
+    patterns in the data.
+
+### 3.3.5 Standardized Regression Coefficients
+
+To compare the relative impact of variables, the data was standardized,
+and the model refitted:
+
+```{r}
+data_scaled <- data %>%
+  mutate(across(c(Revenue, Membership_Fees, Gross_Margin, Warehouses), scale))
+lm_model_scaled <- lm(Revenue ~ Membership_Fees + Gross_Margin + Warehouses, data = data_scaled)
+summary(lm_model_scaled)
+```
+
+**Results:**
+
+-   **Membership_Fees:** Standardized coefficient = **0.883** (largest
+    contributor to revenue).
+
+-   **Gross_Margin:** Standardized coefficient = **-0.113** (significant
+    but relatively small negative impact).
+
+-   **Warehouses:** Standardized coefficient = **0.099** (small positive
+    impact).
+
+**Analysis:**
+
+Standardized coefficients allow comparison of the relative contributions
+of each variable to revenue:
+
+-   **Membership_Fees** is the most significant driver of revenue.
+
+-   **Gross_Margin's negative impact** is significant but relatively
+    small.
+
+-   **Warehouses** have a smaller positive contribution.
+
+# 4. Costco's Revenue Analysis and Forcast
+
+## 4.1 ACF and PACF Plot
+
+```{r}
+# ACF and PACF plots
+ggAcf(data_ts, lag.max = 20) + ggtitle("ACF of Costco Revenue")
+ggPacf(data_ts, lag.max = 20) + ggtitle("PACF of Costco Revenue")
+```
+
+-   Based on the analysis of the ACF and PACF plots, the following
+    conclusions can be drawn: The ACF plot shows that the lag values
+    decay slowly or exhibit periodic patterns, indicating the presence
+    of trends or seasonal components in the time series. Significant
+    lags, such as at 1, 2, and 4, suggest the potential inclusion of AR
+    or MA terms. Meanwhile, the PACF plot shows a sharp drop after a
+    significant spike at lag 1, indicating that a low-order
+    autoregressive model, such as AR(1), may be appropriate.
+
+-   Hence, the time series appears non-stationary and likely requires
+    first-order differencing to achieve stationarity. Based on this, it
+    is recommended to construct a SARIMA model with the following
+    parameter settings: For the non-seasonal part (p,d,q), (1, 1, 1) is
+    suggested. Here, d=1 accounts for non-stationarity through
+    first-order differencing, p=1 captures the significant lag 1 in the
+    PACF with an AR(1) term, and q is set to 0 or 1 to explore MA
+    characteristics. For the seasonal part (P,D,Q,s), the settings (1,
+    1, 0, 4) or (1, 1, 1, 4) are recommended. Specifically, D=1
+    addresses seasonal non-stationarity via seasonal differencing, P=1
+    accounts for significant seasonal lags in the ACF with a seasonal
+    AR(1) term, and Q is set to 0 or 1 to optimize the seasonal MA
+    component. These parameter settings represent a reasonable starting
+    point for modeling quarterly time series with seasonal patterns.
+
+## 4.2 Data Splitting
+
+```{r}
+# Split the data into training and validation sets
+train_ts <- window(data_ts, end = c(2022, 4))  # Training set
+valid_ts <- window(data_ts, start = c(2023, 1))  # Validation set
+
+# Plot training and validation data
+autoplot(train_ts) +
+  autolayer(valid_ts, series = "Validation Set", linetype = "dashed") +
+  ggtitle("Training and Validation Data Split") +
+  xlab("Year") +
+  ylab("Revenue") 
+```
+
+-   First splitting the dataset into training and validation sets, with
+    the training set covering data from Q1-2009 to Q4-2022 and the
+    validation set encompassing Q1-2023 to Q4-2024. This split allowed
+    for a robust evaluation of model performance on unseen data.
+
+## 4.3 Model Construction and Evaluation
+
+```{r}
+# SARIMA model training and evaluation function
+train_sarima <- function(train_data, test_data, order, seasonal) {
+  sarima_model <- Arima(train_data, order = order, seasonal = seasonal)
+  sarima_forecast <- forecast(sarima_model, h = length(test_data))
+  sarima_accuracy <- accuracy(sarima_forecast$mean, test_data)
+  
+  # Visualize the forecast
+  autoplot(sarima_forecast) +
+    autolayer(test_data, series = "Validation Set", linetype = "dashed", color = "blue") +
+    geom_ribbon(aes(ymin = sarima_forecast$lower[, 2], ymax = sarima_forecast$upper[, 2]),
+                fill = "lightblue", alpha = 0.3) +
+    ggtitle("SARIMA Model Forecast") +
+    xlab("Year") +
+    ylab("Revenue") +
+    theme_minimal()
+  
+  return(list(model = sarima_model, forecast = sarima_forecast, accuracy = sarima_accuracy))
+}
+
+# Auto ARIMA model training and evaluation function
+train_auto_arima <- function(train_data, test_data) {
+  auto_model <- auto.arima(train_data)
+  auto_forecast <- forecast(auto_model, h = length(test_data))
+  auto_accuracy <- accuracy(auto_forecast$mean, test_data)
+  
+  # Visualize the forecast
+  autoplot(auto_forecast) +
+    autolayer(test_data, series = "Validation Set", linetype = "dashed", color = "blue") +
+    geom_ribbon(aes(ymin = auto_forecast$lower[, 2], ymax = auto_forecast$upper[, 2]),
+                fill = "lightblue", alpha = 0.3) +
+    ggtitle("Auto ARIMA Model Forecast") +
+    xlab("Year") +
+    ylab("Revenue") +
+    theme_minimal()
+  
+  return(list(model = auto_model, forecast = auto_forecast, accuracy = auto_accuracy))
+}
+
+# Two-level model training and evaluation function
+train_two_level_model <- function(train_data, test_data) {
+  # Level 1: Trend + Seasonal Regression
+  reg_model <- tslm(train_data ~ trend + season)
+  reg_forecast <- forecast(reg_model, h = length(test_data))
+  
+  # Level 2: Residual ARIMA
+  residuals <- residuals(reg_model)
+  ar_resid_model <- auto.arima(residuals)
+  ar_resid_forecast <- forecast(ar_resid_model, h = length(test_data))
+  
+  # Combine forecasts
+  combined_forecast <- reg_forecast$mean + ar_resid_forecast$mean
+  
+  # Visualize the forecast
+  autoplot(train_data) +
+    autolayer(test_data, series = "Validation Set", linetype = "dashed", color = "blue") +
+    autolayer(combined_forecast, series = "Combined Forecast", color = "red") +
+    ggtitle("Two-Level Model Forecast") +
+    xlab("Year") +
+    ylab("Revenue") +
+    theme_minimal()
+  
+  combined_accuracy <- accuracy(combined_forecast, test_data)
+  return(list(reg_model = reg_model, ar_resid_model = ar_resid_model, 
+              combined_forecast = combined_forecast, accuracy = combined_accuracy))
+}
+# Train SARIMA models and evaluate
+sarima_result_111_110 <- train_sarima(train_ts, valid_ts, order = c(1, 1, 1), seasonal = c(1, 1, 0))
+sarima_result_110_111 <- train_sarima(train_ts, valid_ts, order = c(1, 1, 0), seasonal = c(1, 1, 1))
+# Train Auto ARIMA model and evaluate
+auto_result <- train_auto_arima(train_ts, valid_ts)
+# Train two-level model and evaluate
+two_level_result <- train_two_level_model(train_ts, valid_ts)
+
+# Print model performance
+cat("\nSARIMA(1,1,1)(1,1,0)[4] Accuracy:\n")
+print(sarima_result_111_110$accuracy)
+cat("\nSARIMA(1,1,0)(1,1,1)[4] Accuracy:\n")
+print(sarima_result_110_111$accuracy)
+cat("\nAuto ARIMA Model Accuracy:\n")
+print(auto_result$accuracy)
+cat("\nTwo-Level Model Accuracy:\n")
+print(two_level_result$accuracy)
+
+```
+
+In the comparison of model performance, multiple metrics (ME, RMSE, MAE,
+MPE, MAPE, ACF1, and Theil’s U) were evaluated to assess each model:
+
+-   SARIMA(1,1,0)(1,1,1)[4]: This model performed the best, with an RMSE
+    of 3585.77 and a MAPE of 5.53%, indicating superior predictive
+    accuracy. Additionally, its MAE (3342.54) reflects smaller absolute
+    errors, and Theil’s U (0.234) suggests a lower deviation between
+    predicted and actual values. However, ACF1 (0.1307) indicates some
+    residual autocorrelation, implying room for improvement in capturing
+    certain patterns.
+
+-   SARIMA(1,1,1)(1,1,0)[4]: This model has an RMSE of 4005.12 and a
+    MAPE of 6.14%, which, although acceptable, is less accurate than
+    SARIMA(1,1,0)(1,1,1)[4]. Its Theil’s U (0.266) shows slightly weaker
+    predictive performance. On the positive side, ACF1 (0.0722) is
+    relatively lower, suggesting better handling of random errors and
+    weaker residual autocorrelation.
+
+-   Auto ARIMA: The auto-selected ARIMA model has an RMSE of 4073.59 and
+    a MAPE of 6.24%, making it slightly less precise than the SARIMA
+    models. However, it achieves the lowest ACF1 (0.0433), indicating
+    highly random residuals. Despite this, it falls short in capturing
+    the complexity of the data patterns compared to the manually
+    optimized SARIMA models.
+
+-   Two-Level Model: This model’s RMSE and MAPE (4073.59 and 6.24%) are
+    almost identical to those of the Auto ARIMA model, but its Theil’s U
+    (0.2714) is slightly higher, indicating limited predictive accuracy.
+    While the first-level regression model effectively captures trends
+    and seasonality, and the second-level ARIMA model reduces residual
+    autocorrelation (ACF1 = 0.0433), the overall performance does not
+    surpass that of a single SARIMA model.
+
+In summary, SARIMA(1,1,0)(1,1,1)[4] is the recommended model due to its
+lowest RMSE, MAPE, and MAE, making it the most accurate overall. While
+other models show strengths in aspects like residual randomness (e.g.,
+ACF1), their higher predictive errors make them less suitable for this
+task.
+
+## 4.4 Final Model and Forecast
+
+```{r}
+# Train the SARIMA model using the entire dataset
+selected_model <- "SARIMA(1,1,0)(1,1,1)[4]"
+final_model <- Arima(data_ts, order = c(1, 1, 0), seasonal = c(1, 1, 1))
+
+residuals <- residuals(final_model)
+
+# Ljung-Box test
+ljung_box_test <- Box.test(residuals, lag = 10, type = "Ljung-Box")
+
+cat("Ljung-Box Test Results:\n")
+print(ljung_box_test)
+
+ggAcf(residuals, lag.max = 20) + 
+  ggtitle("ACF of Residuals") 
+# Print summary of the final model
+cat("\nSelected Model:", selected_model, "\n")
+print(summary(final_model))
+
+# Forecast the next 4 quarters using the entire dataset
+final_forecast <- forecast(final_model, h = 4)
+
+# Visualize the final forecast
+autoplot(final_forecast) +
+  ggtitle("SARIMA(1,1,0)(1,1,1)[4] Final Forecast for 2025") +
+  xlab("Year") +
+  ylab("Revenue") 
+
+# Create a forecast table
+forecast_table <- data.frame(
+  Quarter = c("Q1-2025", "Q2-2025", "Q3-2025", "Q4-2025"),
+  Predicted_Revenue = as.numeric(final_forecast$mean),
+  Lower_95_CI = as.numeric(final_forecast$lower[, 2]),
+  Upper_95_CI = as.numeric(final_forecast$upper[, 2])
+)
+print(forecast_table)
+```
+
+**Model Performance:**
+
+-   The SARIMA(1,1,0)(1,1,1)[4] model demonstrates solid predictive
+    performance, with minimal bias (ME: 23.75) and high relative
+    accuracy (MAPE: 2.63%). The low residual autocorrelation confirmed
+    by the Ljung-Box test indicates that the model effectively captures
+    the data's trends and seasonality. While occasional larger errors
+    are reflected in the RMSE and MAE values, the model is reliable for
+    short-term forecasting.
+
+**Forecast Analysis:**
+
+-   The forecasted quarterly revenues for 2025 reveal both seasonal
+    patterns and growth trends. Revenues are projected to increase
+    steadily from Q1 (\$61,227.51 million) to Q2 (\$62,531.72 million)
+    and peak significantly in Q3 (\$81,878.96 million), indicating a
+    strong seasonal effect. In Q4, revenue is expected to decline to
+    \$65,484.18 million, remaining above Q1 and Q2 levels. The 95%
+    confidence intervals suggest a high degree of certainty in
+    predictions for most quarters, though the larger range for Q3
+    highlights greater uncertainty around the seasonal peak. Overall,
+    the forecast aligns well with historical patterns, providing
+    valuable insights for strategic planning while emphasizing the
+    importance of monitoring for unexpected deviations.
+
+# 5. Conclusion
+
+The analysis of endogenous variables and the forecasting models,
+strategic recommendations were made for inventory planning, marketing,
+and management to boost revenue.
+
+Based on the analysis results, the team found that increasing membership
+fees and expanding the member base significantly boost Costco's revenue,
+while expanding the number of warehouses enhances market coverage and
+drives revenue growth. Costco's low gross margin and high sales volume
+strategy attracts more customers and increases revenue.
+
+The 2025 revenue forecast shows seasonal variations, with Q3 expected to
+be the peak revenue quarter and Q1 the lowest. To maximize revenue,
+Costco should intensify promotions in Q3, implement targeted customer
+engagement strategies in Q1, and accurately plan inventory, supply
+chain, and human resources to prepare for the peak season.
